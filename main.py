@@ -15,6 +15,9 @@ class Item(BaseModel):
     price: float
     is_offer: bool | None = None
 
+class StartSessionIn(BaseModel):
+    build_version: str
+
 class EventIn(BaseModel):
     name: str
     timestamp: datetime
@@ -22,15 +25,28 @@ class EventIn(BaseModel):
 class EventOut(EventIn):
     id: int
 
+
 def init_db():
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur: # a handle to run SQL and fetch results
             cur.execute(""" 
+                CREATE EXTENSION IF NOT EXISTS pgcrypto;
+                        
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    build_version text NOT NULL,
+                    client_id text NULL
+                );
+                        
                 CREATE TABLE IF NOT EXISTS events (
                     id BIGSERIAL PRIMARY KEY,
+                    session_id uuid NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
                     name TEXT NOT NULL,
                     ts TIMESTAMPTZ NOT NULL
                 );
+                
+                CREATE INDEX IF NOT EXISTS idx_events_sessions_ts ON events(session_id, ts);
             """)
         conn.commit()
 
@@ -38,7 +54,7 @@ def insert_event(event: EventIn):
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO events (name, ts) VALUES (%s, %s) RETURNING id;",
+                "INSERT INTO events (session_id, name, ts) VALUES (%s, %s, %s) RETURNING id;",
                 (event.name, event.timestamp),
             )
             new_id = cur.fetchone()[0]
@@ -51,6 +67,7 @@ def fetch_timeline():
             cur.execute(""" 
                 SELECT id, name, ts AS timestamp
                 FROM events
+                WHERE session_id = %s
                 ORDER BY ts ASC
                 LIMIT 5000;
             """)
@@ -58,7 +75,13 @@ def fetch_timeline():
             rows = cur.fetchall(); 
     return {"events": rows}
 
-@app.on_event("startup")
+def execute_sql(sql: str) -> None:
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        conn.commit()
+
+@app.lifespan("startup")
 def on_startup():
     init_db()
 
@@ -78,23 +101,33 @@ def update_item(item_id: int, item: Item):
 def health():
     return {"ok": True}
 
-
+#gets the timestamp and info of events
+@app.get("sessions/{sessions_id}/timeline")
+def timeline():
+    return fetch_timeline()
 
 #stores events into the events table
 @app.post("/events")
-async def create_event(event: EventIn):
+def create_event(event: EventIn):
     return insert_event(event)
 
-#gets the timestamp and info of events
-@app.get("/timeline")
-async def timeline():
-    return fetch_timeline()
+@app.post("/sessions/start")
+def start_session():
+    return execute_sql("""
+            INSERT INTO sessions (build_version, client_id)
+            VALUES (%s, %s)
+            RETURNING id;
+        """)
+
+@app.post("/sessions/end")
+def end_session():
+    return execute_sql("UPDATE sessions SET ended_at = now() WHERE id = %s;")
 
 @app.post("/reset")
 def reset():
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
-            cur.execute("TRUNCATE events RESTART IDENTITY;")
+            cur.execute("TRUNCATE events, sessions RESTART IDENTITY CASCADE;")
         conn.commit()
     return {"ok": True}
 
