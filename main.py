@@ -67,6 +67,8 @@ def read_root():
 def health():
     return {"ok": True}
 
+
+
 #stores events into the events table
 @app.post("/events")
 async def create_event(event: EventIn):
@@ -76,3 +78,12 @@ async def create_event(event: EventIn):
 @app.get("/timeline")
 async def timeline():
     return fetch_timeline()
+
+@app.post("/reset")
+def reset():
+    with psycopg.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE events RESTART IDENTITY;")
+        conn.commit()
+    return {"ok": True}
+
