@@ -9,10 +9,9 @@ class StartSessionIn(BaseModel):
     build_version: str=Field(min_length=1)
     client_id: str | None = None
 
-class EndSessionIn(BaseModel):
+class StartSessionOut(BaseModel):
     session_id : str
-
-class EndSessionOut(BaseModel):
+class EndSession(BaseModel):
     session_id : str
 
 class Event(BaseModel):
@@ -38,7 +37,7 @@ app = FastAPI()
     # initialize SESSIONS @ sid with all ids & ts (dict in json)
         # ts - datetime.now(timezone.utc).isoformat()
     # intiialize EVENTS @ sid 
-@app.post("/sessions/start", response_model=EndSessionIn)
+@app.post("/sessions/start", response_model=StartSessionOut)
 def start_session(body: StartSessionIn):
     sid = str(uuid.uuid4())
     SESSIONS[sid] = {
@@ -49,7 +48,7 @@ def start_session(body: StartSessionIn):
         "client_id": body.client_id
     }
     EVENTS_BY_SESSION[sid] = []
-    return EndSessionIn(session_id=sid)
+    return StartSessionOut(session_id=sid)
 
 # End Session Function
 # parameters: StartSessionOut
@@ -58,10 +57,13 @@ def start_session(body: StartSessionIn):
     # fill out the ended_at timestamp in SESSIONS[sid]
         # throw 404 if sid not found
 @app.post("/sessions/end")
-def end_session(body: EndSessionIn):
+def end_session(body: EndSession):
     session = SESSIONS.get(body.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    if SESSIONS[body.session_id]["ended_at"] is not None:
+        raise HTTPException(status_code=409, detail="Session already ended")
+    
     session["ended_at"] = datetime.now(timezone.utc).isoformat()
     return {"Ended session": True}
 
@@ -78,11 +80,13 @@ def list_sessions(
     limit: int = Query(50, ge=1, le=200),
     active_only : bool = False
 ):
-    sessions = SESSIONS.values()
+    sessions = list(SESSIONS.values()) # values returns a view
     if active_only == True:
-        new_sessions : dict[str, dict]
-        
-        
+        sessions = [s for s in sessions if s["ended_at"] is None]
+
+    sessions.sort(key=lambda s: s["created_at"], reverse=True)
+    return {"sessions" : sessions[:limit]}
+    
 
 # Add an Event(s) Function
 # parameters: Eventbatch
