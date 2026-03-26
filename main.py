@@ -80,13 +80,13 @@ def list_sessions(
     limit: int = Query(50, ge=1, le=200),
     active_only : bool = False
 ):
-    sessions = list(SESSIONS.values()) # values returns a view
-    if active_only == True:
+    sessions = list(SESSIONS.values())
+    if active_only is True:
         sessions = [s for s in sessions if s["ended_at"] is None]
-
-    sessions.sort(key=lambda s: s["created_at"], reverse=True)
-    return {"sessions" : sessions[:limit]}
     
+    sessions.sort(key=lambda s: s["created_at"], reverse=True)
+    return {"sessions": sessions[:limit]}
+        
 
 # Add an Event(s) Function
 # parameters: Eventbatch
