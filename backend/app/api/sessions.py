@@ -19,7 +19,7 @@ router = APIRouter(
     # initialize SESSIONS @ sid with all ids & ts (dict in json)
         # ts - datetime.now(timezone.utc).isoformat()
     # intiialize EVENTS @ sid 
-@app.post("/start", response_model=StartSessionOut)
+@router.post("/start", response_model=StartSessionOut)
 def start_session(body: StartSessionIn):
     sid = str(uuid.uuid4())
     SESSIONS[sid] = {

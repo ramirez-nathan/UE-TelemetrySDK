@@ -5,7 +5,7 @@ from ..schemas import EventBatch
 from ..storage import EVENTS_BY_SESSION, SESSIONS
 
 router = APIRouter(
-    target = ["events"],
+    tags = ["events"],
     dependencies=[Depends(require_api_key)], # applies to ALL routes here
 )
 
